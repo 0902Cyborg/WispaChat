@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { useChats, ChatWithParticipants } from "@/hooks/useChats";
 import { format } from "date-fns";
 import { OnlineStatus } from "@/components/ui/online-status";
+import { useMessages } from '@/hooks/useMessages';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_FILE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf', 'image/webp'];
@@ -25,66 +26,14 @@ interface ChatWindowProps {
 const ChatWindow: React.FC<ChatWindowProps> = ({ chatId, className }) => {
   const [newMessage, setNewMessage] = useState("");
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
-  const [messages, setMessages] = useState<any[]>([]);
   const { user } = useAuth();
   const { chats } = useChats();
+  const { messages, isLoading: messagesLoading, sendMessage } = useMessages(chatId);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const currentChat = chats?.find(c => c.id === chatId);
   const otherParticipant = currentChat?.participants.find(p => p.user_id !== user?.id)?.profiles;
-
-  useEffect(() => {
-    if (!chatId) return;
-
-    // Subscribe to messages
-    const channel = supabase
-      .channel(`chat:${chatId}`)
-      .on('postgres_changes', 
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: 'messages',
-          filter: `chat_id=eq.${chatId}`
-        }, 
-        payload => {
-          // Handle real-time updates while maintaining chronological order
-          setMessages(current => {
-            const newMessage = payload.new;
-            const messageExists = current.some(msg => msg.id === newMessage.id);
-            if (messageExists) return current;
-            
-            const newMessages = [...current, newMessage];
-            return newMessages.sort((a, b) => 
-              new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-            );
-          });
-        }
-      )
-      .subscribe();
-
-    // Fetch existing messages
-    const fetchMessages = async () => {
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('chat_id', chatId)
-        .order('created_at', { ascending: true });
-
-      if (error) {
-        console.error('Error fetching messages:', error);
-        toast.error('Failed to load messages');
-      } else {
-        setMessages(data || []);
-      }
-    };
-
-    fetchMessages();
-
-    return () => {
-      channel.unsubscribe();
-    };
-  }, [chatId]);
 
   useEffect(() => {
     // Scroll to bottom when messages change
@@ -164,15 +113,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId, className }) => {
     try {
       const attachment = attachedFile ? await uploadAttachment() : null;
 
-      const { error } = await supabase.from('messages').insert({
-        chat_id: chatId,
-        sender_id: user?.id,
-        content: trimmedMessage || null, // Allow null for attachment-only messages
+      await sendMessage.mutateAsync({
+        content: trimmedMessage || undefined,
         attachment_url: attachment?.url,
         attachment_type: attachment?.type,
       });
-
-      if (error) throw error;
 
       setNewMessage("");
       setAttachedFile(null);
@@ -180,7 +125,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId, className }) => {
         fileInputRef.current.value = '';
       }
     } catch (error) {
-      toast.error("Failed to send message");
+      // Error handling is done in the hook
       console.error(error);
     }
   };
@@ -227,7 +172,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId, className }) => {
     <div className={cn("flex flex-col h-full", className)}>
       {/* File attachment preview */}
       {attachedFile && (
-        <div className="bg-accent p-2 flex items-center justify-between">
+        <div className="bg-webchat-primary/10 p-2 flex items-center justify-between">
           <div className="flex items-center space-x-2">
             {attachedFile.type.startsWith('image/') ? (
               <img 
@@ -236,16 +181,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId, className }) => {
                 className="h-10 w-10 object-cover rounded" 
               />
             ) : (
-              <div className="h-10 w-10 bg-gray-200 flex items-center justify-center rounded">
+              <div className="h-10 w-10 bg-webchat-primary/20 flex items-center justify-center rounded">
                 {attachedFile.name.split('.').pop()?.toUpperCase()}
               </div>
             )}
-            <span>{attachedFile.name}</span>
+            <span className="text-sm">{attachedFile.name}</span>
           </div>
           <Button 
             variant="ghost" 
             size="icon" 
             onClick={removeAttachment}
+            className="hover:bg-webchat-primary/10"
           >
             <X className="h-4 w-4" />
           </Button>
@@ -253,14 +199,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId, className }) => {
       )}
 
       {/* Chat header */}
-      <div className="p-3 bg-gray-100 flex items-center">
-        <Avatar className="h-10 w-10 mr-3">
+      <div className="p-3 bg-webchat-primary dark:bg-webchat-dark flex items-center gap-3 text-white">
+        <Avatar className="h-10 w-10">
           <AvatarImage src={otherParticipant?.avatar_url || undefined} />
           <AvatarFallback>{otherParticipant?.full_name?.[0] || '?'}</AvatarFallback>
         </Avatar>
         
-        <div className="flex-1">
-          <h3 className="font-medium">{otherParticipant?.full_name || "Unknown"}</h3>
+        <div className="flex-1 min-w-0">
+          <h3 className="font-medium truncate">{otherParticipant?.full_name || "Unknown"}</h3>
           <OnlineStatus userId={otherParticipant?.id || ''} />
         </div>
       </div>
@@ -268,26 +214,47 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId, className }) => {
       <Separator />
       
       {/* Messages area */}
-      <div className="flex-1 overflow-y-auto p-4 bg-webchat-bg">
-        <div className="space-y-2">
-          {messages.map((message) => (
-            <Message 
-              key={message.id} 
-              content={message.content}
-              timestamp={format(new Date(message.created_at), 'p')}
-              isOutgoing={message.sender_id === user?.id}
-              status={message.status || "sent"}
-              attachment_url={message.attachment_url}
-              attachment_type={message.attachment_type}
-            />
-          ))}
-          <div ref={messagesEndRef} />
-        </div>
+      <div className="flex-1 overflow-y-auto p-4 chat-background">
+        {messagesLoading ? (
+          <div className="flex items-center justify-center h-full">
+            <p className="text-gray-500">Loading messages...</p>
+          </div>
+        ) : messages?.length === 0 ? (
+          <div className="flex items-center justify-center h-full text-center">
+            <div className="text-gray-500">
+              <p className="mb-2">No messages yet</p>
+              <p className="text-sm">Start the conversation by sending a message!</p>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {messages?.map((message) => (
+              <Message 
+                key={message.id} 
+                content={message.content || ""}
+                timestamp={format(new Date(message.created_at), 'p')}
+                isOutgoing={message.sender_id === user?.id}
+                status={message.status}
+                attachment_url={message.attachment_url}
+                attachment_type={message.attachment_type}
+              />
+            ))}
+            <div ref={messagesEndRef} />
+          </div>
+        )}
       </div>
       
       {/* Message input */}
-      <div className="p-3 bg-gray-100">
-        <div className="flex items-center space-x-2">
+      <div className="p-2 bg-webchat-primary/5 dark:bg-webchat-dark border-t">
+        <div className="flex items-center gap-2 bg-white dark:bg-webchat-bubble rounded-full p-1 pl-4">
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="rounded-full hover:bg-webchat-primary/10"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Paperclip className="h-5 w-5 text-webchat-primary" />
+          </Button>
           <input 
             type="file" 
             ref={fileInputRef}
@@ -295,24 +262,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId, className }) => {
             onChange={handleFileUpload}
             accept={ALLOWED_FILE_TYPES.join(',')}
           />
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="rounded-full"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <Paperclip className="h-5 w-5" />
-          </Button>
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="rounded-full"
-          >
-            <ImageIcon className="h-5 w-5" />
-          </Button>
           <AutoResizeInput
             placeholder="Type a message"
-            className="flex-1 rounded-md"
+            className="flex-1 bg-transparent border-0 focus:ring-0 dark:text-white"
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
             maxLength={MAX_MESSAGE_LENGTH}
@@ -321,7 +273,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId, className }) => {
           />
           <Button
             size="icon"
-            className="rounded-full bg-webchat-primary hover:bg-webchat-secondary"
+            className="rounded-full bg-webchat-primary hover:bg-webchat-dark"
             onClick={handleSendMessage}
             disabled={!newMessage.trim() && !attachedFile}
           >

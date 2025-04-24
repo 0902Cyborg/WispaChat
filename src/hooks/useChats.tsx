@@ -1,8 +1,8 @@
-
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { toast } from "sonner";
+import { useEffect } from "react";
 
 export type ChatWithParticipants = {
   id: string;
@@ -22,7 +22,8 @@ export type ChatWithParticipants = {
     created_at: string;
     sender_id: string;
     is_deleted: boolean;
-  }
+  };
+  unread_count: number;
 };
 
 export const useChats = () => {
@@ -30,7 +31,7 @@ export const useChats = () => {
   const queryClient = useQueryClient();
 
   // Get all chats for the current user
-  const { data: chats, isLoading, error } = useQuery({
+  const { data: chats, isLoading, error } = useQuery<ChatWithParticipants[]>({
     queryKey: ["chats"],
     queryFn: async () => {
       if (!user) return [];
@@ -68,7 +69,7 @@ export const useChats = () => {
           return [];
         }
 
-        // For each chat, get the participants and the latest message
+        // For each chat, get the participants, latest message, and unread count
         const chatsWithDetails = await Promise.all(
           chatsData.map(async (chat) => {
             try {
@@ -146,10 +147,23 @@ export const useChats = () => {
                 console.error("Error fetching last message:", messageError);
               }
 
+              // Get unread count
+              const { data: unreadData, error: unreadError } = await supabase
+                .from("messages")
+                .select("id", { count: 'exact' })
+                .eq("chat_id", chat.id)
+                .neq("sender_id", user.id)
+                .in("status", ["sent", "delivered"]);
+
+              if (unreadError) {
+                console.error("Error fetching unread count:", unreadError);
+              }
+
               return {
                 ...chat,
                 participants: participantsWithProfiles,
                 last_message: lastMessageData || undefined,
+                unread_count: (unreadData?.length || 0)
               } as ChatWithParticipants;
             } catch (err) {
               console.error("Error processing chat:", err);
@@ -157,12 +171,18 @@ export const useChats = () => {
                 ...chat,
                 participants: [],
                 last_message: undefined,
+                unread_count: 0
               } as ChatWithParticipants;
             }
           })
         );
 
-        return chatsWithDetails;
+        // Sort chats by last message time or creation time
+        return chatsWithDetails.sort((a, b) => {
+          const aTime = a.last_message?.created_at || a.created_at;
+          const bTime = b.last_message?.created_at || b.created_at;
+          return new Date(bTime).getTime() - new Date(aTime).getTime();
+        });
       } catch (err) {
         console.error("Error in useChats:", err);
         toast.error("Failed to load chats");
@@ -171,6 +191,31 @@ export const useChats = () => {
     },
     enabled: !!user,
   });
+
+  // Subscribe to message status changes
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel('message-status')
+      .on('postgres_changes', 
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'messages',
+          filter: 'status=in.(sent,delivered,read)'
+        }, 
+        () => {
+          // Invalidate the chats query to update unread counts
+          queryClient.invalidateQueries({ queryKey: ["chats"] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [user, queryClient]);
 
   const createChat = useMutation({
     mutationFn: async (otherUserId: string) => {

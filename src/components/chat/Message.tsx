@@ -24,51 +24,60 @@ const Message: React.FC<MessageProps> = ({
 
   return (
     <div className={cn(
-      "max-w-[70%] rounded-lg p-2 pb-1 relative",
-      isOutgoing ? "ml-auto bg-webchat-light" : "mr-auto bg-white"
+      "group flex",
+      isOutgoing ? "justify-end" : "justify-start"
     )}>
-      {attachment_url && (
-        <div className="mb-2">
-          {isImage ? (
-            <img 
-              src={attachment_url} 
-              alt="Attachment" 
-              className="rounded max-h-[200px] object-contain"
-            />
-          ) : (
-            <Button
-              variant="secondary"
-              size="sm"
-              className="w-full"
-              onClick={() => window.open(attachment_url, '_blank')}
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Download Attachment
-            </Button>
-          )}
-        </div>
-      )}
-      {content && <p className="text-sm whitespace-pre-wrap break-words">{content}</p>}
-      <div className="flex items-center justify-end gap-1 mt-1">
-        <span className="text-[10px] text-gray-500">{timestamp}</span>
-        
-        {isOutgoing && (
-          <div className="flex">
-            {status === "read" ? (
-              <div className="text-webchat-read">
-                <Check className="h-3 w-3" />
-                <Check className="h-3 w-3 -ml-1.5" />
-              </div>
-            ) : status === "delivered" ? (
-              <div className="text-gray-500">
-                <Check className="h-3 w-3" />
-                <Check className="h-3 w-3 -ml-1.5" />
-              </div>
+      <div className={cn(
+        "max-w-[65%] rounded-lg relative",
+        isOutgoing ? "chat-bubble-outgoing" : "chat-bubble-incoming",
+        "shadow-sm"
+      )}>
+        {attachment_url && (
+          <div className="mb-1">
+            {isImage ? (
+              <img 
+                src={attachment_url} 
+                alt="Attachment" 
+                className="rounded-lg max-h-[200px] w-full object-cover"
+              />
             ) : (
-              <Check className="h-3 w-3 text-gray-500" />
+              <Button
+                variant="secondary"
+                size="sm"
+                className="w-full bg-webchat-primary/10 hover:bg-webchat-primary/20 text-webchat-primary"
+                onClick={() => window.open(attachment_url, '_blank')}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Download Attachment
+              </Button>
             )}
           </div>
         )}
+        {content && (
+          <div className="px-2 py-1.5">
+            <p className="text-sm whitespace-pre-wrap break-words">{content}</p>
+          </div>
+        )}
+        <div className="flex items-center justify-end gap-1 px-2 pb-1 text-[0.65rem] opacity-70">
+          <span>{timestamp}</span>
+          {isOutgoing && (
+            <div className="flex ml-0.5">
+              {status === "read" ? (
+                <div className="text-webchat-primary">
+                  <Check className="h-3 w-3" />
+                  <Check className="h-3 w-3 -ml-1.5" />
+                </div>
+              ) : status === "delivered" ? (
+                <div className="text-gray-500">
+                  <Check className="h-3 w-3" />
+                  <Check className="h-3 w-3 -ml-1.5" />
+                </div>
+              ) : (
+                <Check className="h-3 w-3 text-gray-500" />
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

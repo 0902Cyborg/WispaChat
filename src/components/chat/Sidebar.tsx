@@ -26,29 +26,31 @@ const Sidebar: React.FC<SidebarProps> = ({ onChatSelect }) => {
   }) || [];
 
   return (
-    <div className="flex flex-col h-full border-r bg-white">
+    <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="p-3 bg-gray-100 flex items-center justify-between">
-        <div className="flex items-center">
-          <Avatar className="h-10 w-10 bg-webchat-primary text-white">
-            <MessageCircle size={20} />
-          </Avatar>
-          <h2 className="ml-3 font-semibold">WebChat</h2>
+      <div className="p-3 bg-webchat-primary dark:bg-webchat-dark">
+        <div className="flex items-center justify-between text-white">
+          <div className="flex items-center">
+            <Avatar className="h-10 w-10">
+              <MessageCircle size={24} />
+            </Avatar>
+            <h2 className="ml-3 font-semibold text-lg">WispaChat</h2>
+          </div>
+          <Button variant="ghost" size="icon" className="text-white hover:bg-webchat-primary/20">
+            <Plus className="h-5 w-5" />
+          </Button>
         </div>
-        <Button variant="ghost" size="icon">
-          <Plus className="h-5 w-5" />
-        </Button>
       </div>
 
       {/* Search */}
-      <div className="p-3">
+      <div className="p-3 bg-white dark:bg-webchat-dark/50">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500" />
           <Input
             placeholder="Search chats"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
+            className="pl-10 bg-webchat-primary/5 dark:bg-webchat-bubble border-none"
           />
         </div>
       </div>
@@ -56,7 +58,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onChatSelect }) => {
       <Separator />
 
       {/* Chat list */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto bg-white dark:bg-webchat-dark/50">
         {isLoading ? (
           <div className="p-4 text-center text-gray-500">Loading chats...</div>
         ) : filteredChats.length === 0 ? (
@@ -74,7 +76,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onChatSelect }) => {
                   name: otherParticipant?.full_name || "Unknown",
                   lastMessage: chat.last_message?.content || "No messages yet",
                   timestamp: chat.last_message?.created_at || chat.created_at,
-                  unread: 0, // TODO: Implement unread count
+                  unread: chat.unread_count,
                   avatar: otherParticipant?.avatar_url || "",
                   userId: otherParticipant?.id || ""
                 }}

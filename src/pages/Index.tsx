@@ -31,31 +31,30 @@ const Index = () => {
     <WispaChat>
       <div className="flex w-full h-full">
         {(showSidebar || !isMobile) && (
-          <div className={`${isMobile ? "w-full" : "w-1/3"} max-w-sm border-r bg-background flex flex-col`}>
+          <div className={`${isMobile ? "fixed inset-0 z-50 bg-background" : "w-[380px]"} border-r bg-background flex flex-col`}>
             <div className="p-3 bg-webchat-primary dark:bg-webchat-dark">
               <Profile />
             </div>
-            <div className="flex-1 overflow-y-auto p-3 space-y-4">
+            <div className="flex-1 overflow-y-auto space-y-4">
               <ChatList onChatSelect={handleChatSelect} />
               <ContactList />
             </div>
-            <div className="p-3 border-t">
+            <div className="p-3 border-t bg-white dark:bg-webchat-dark/50">
               <Settings />
             </div>
           </div>
         )}
         {(!showSidebar || !isMobile) && (
-          <div className={`${isMobile ? "w-full" : "flex-1"}`}>
+          <div className={`${isMobile ? "fixed inset-0 z-50 bg-background" : "flex-1"}`}>
             <ChatWindow
               chatId={selectedChatId}
               className="h-full"
             />
           </div>
         )}
-
         {isMobile && selectedChatId && !showSidebar && (
           <button
-            className="fixed top-3 left-3 z-10 p-2 rounded-full bg-webchat-primary text-white shadow-md"
+            className="fixed top-4 left-4 z-[60] p-2 rounded-full bg-webchat-primary text-white shadow-md hover:bg-webchat-dark transition-colors"
             onClick={() => setShowSidebar(true)}
           >
             <ArrowLeft className="h-5 w-5" />
