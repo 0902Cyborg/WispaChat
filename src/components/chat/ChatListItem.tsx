@@ -2,6 +2,7 @@ import React from "react";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
+import { OnlineStatus } from "@/components/ui/online-status";
 
 interface Chat {
   id: string;
@@ -10,6 +11,7 @@ interface Chat {
   timestamp: string;
   unread: number;
   avatar: string;
+  userId: string; // Add userId for online status
 }
 
 interface ChatListItemProps {
@@ -39,12 +41,17 @@ const ChatListItem: React.FC<ChatListItemProps> = ({
       )}
       onClick={onClick}
     >
-      <Avatar className="h-12 w-12 mr-3">
-        <AvatarImage src={chat.avatar} alt={chat.name} />
-        <AvatarFallback>
-          {chat.name[0]?.toUpperCase() || '?'}
-        </AvatarFallback>
-      </Avatar>
+      <div className="relative">
+        <Avatar className="h-12 w-12 mr-3">
+          <AvatarImage src={chat.avatar} alt={chat.name} />
+          <AvatarFallback>
+            {chat.name[0]?.toUpperCase() || '?'}
+          </AvatarFallback>
+        </Avatar>
+        <div className="absolute -bottom-1 -right-1">
+          <OnlineStatus userId={chat.userId} showText={false} />
+        </div>
+      </div>
       
       <div className="flex-1 min-w-0">
         <div className="flex justify-between items-center">

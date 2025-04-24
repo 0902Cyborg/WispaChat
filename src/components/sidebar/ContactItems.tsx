@@ -1,8 +1,8 @@
-
 import React from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Check, X, Clock, User } from "lucide-react";
+import { OnlineStatus } from "@/components/ui/online-status";
 
 interface ContactItemProps {
   contact: any;
@@ -41,12 +41,19 @@ export const ContactItem: React.FC<ContactItemProps> = ({
         className="flex items-center space-x-3 flex-1 cursor-pointer" 
         onClick={handleChatStart}
       >
-        <Avatar>
-          <AvatarImage src={contact.profiles?.avatar_url ?? undefined} />
-          <AvatarFallback>
-            {contact.profiles?.full_name?.[0] || '?'}
-          </AvatarFallback>
-        </Avatar>
+        <div className="relative">
+          <Avatar>
+            <AvatarImage src={contact.profiles?.avatar_url ?? undefined} />
+            <AvatarFallback>
+              {contact.profiles?.full_name?.[0] || '?'}
+            </AvatarFallback>
+          </Avatar>
+          {type === "contact" && (
+            <div className="absolute -bottom-1 -right-1">
+              <OnlineStatus userId={contact.profiles?.id || ''} showText={false} />
+            </div>
+          )}
+        </div>
         <div className="flex-1 min-w-0">
           <p className="font-medium truncate">
             {contact.profiles?.full_name || "Unknown"}

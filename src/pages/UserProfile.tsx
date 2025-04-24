@@ -1,16 +1,21 @@
-
 import React, { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { useProfile } from "@/hooks/useProfile";
+import { useAuth } from "@/hooks/useAuth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { supabase } from "@/integrations/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { OnlineStatus } from "@/components/ui/online-status";
+import { supabase } from "@/integrations/supabase/client";
+import { useStartChat } from "@/hooks/useStartChat";
 import { toast } from "sonner";
 
 const UserProfile: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { profile: currentUserProfile } = useProfile();
+  const { user } = useAuth();
+  const startChat = useStartChat();
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -37,14 +42,8 @@ const UserProfile: React.FC = () => {
           .eq("id", id)
           .maybeSingle();
           
-        if (error) {
-          console.error("Error fetching profile:", error);
-          throw error;
-        }
-        
-        if (!data) {
-          throw new Error("User profile not found");
-        }
+        if (error) throw error;
+        if (!data) throw new Error("User profile not found");
         
         setProfile(data);
       } catch (err: any) {
@@ -81,10 +80,15 @@ const UserProfile: React.FC = () => {
     <div className="flex flex-col items-center mt-12">
       <Card className="p-8 max-w-md w-full">
         <div className="flex flex-col items-center">
-          <Avatar className="h-24 w-24">
-            <AvatarImage src={profile.avatar_url} />
-            <AvatarFallback>{profile.full_name?.[0] || "?"}</AvatarFallback>
-          </Avatar>
+          <div className="relative">
+            <Avatar className="h-24 w-24">
+              <AvatarImage src={profile.avatar_url} />
+              <AvatarFallback>{profile.full_name?.[0] || "?"}</AvatarFallback>
+            </Avatar>
+            <div className="absolute -bottom-1 right-0">
+              <OnlineStatus userId={profile.id} />
+            </div>
+          </div>
           
           <h2 className="text-2xl mt-4 font-semibold">{profile.full_name}</h2>
           
@@ -92,10 +96,16 @@ const UserProfile: React.FC = () => {
             {profile.status_message ?? "Available"}
           </div>
           
-          <div className="mt-4 bg-gray-100 dark:bg-gray-800 rounded-lg px-4 py-2">
-            <span className="text-sm text-gray-500 dark:text-gray-400">User Code:</span>
-            <span className="font-mono ml-2">{profile.user_code?.toString().padStart(6, "0")}</span>
-          </div>
+          {profile.id !== user?.id && (
+            <div className="mt-4 flex space-x-2">
+              <Button 
+                onClick={() => startChat && startChat(profile.id)}
+                className="bg-webchat-primary hover:bg-webchat-primary/90 text-white"
+              >
+                Send Message
+              </Button>
+            </div>
+          )}
         </div>
       </Card>
     </div>

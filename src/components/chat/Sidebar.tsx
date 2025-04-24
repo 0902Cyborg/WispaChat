@@ -69,12 +69,15 @@ const Sidebar: React.FC<SidebarProps> = ({ onChatSelect }) => {
             return (
               <ChatListItem
                 key={chat.id}
-                id={chat.id}
-                name={otherParticipant?.full_name || "Unknown"}
-                lastMessage={chat.last_message?.content || "No messages yet"}
-                timestamp={chat.last_message?.created_at || chat.created_at}
-                unread={0} // TODO: Implement unread count
-                avatar={otherParticipant?.avatar_url || ""}
+                chat={{
+                  id: chat.id,
+                  name: otherParticipant?.full_name || "Unknown",
+                  lastMessage: chat.last_message?.content || "No messages yet",
+                  timestamp: chat.last_message?.created_at || chat.created_at,
+                  unread: 0, // TODO: Implement unread count
+                  avatar: otherParticipant?.avatar_url || "",
+                  userId: otherParticipant?.id || ""
+                }}
                 onClick={() => onChatSelect(chat.id)}
               />
             );

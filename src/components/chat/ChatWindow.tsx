@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
-import { Input } from "@/components/ui/input";
+import { AutoResizeInput } from "@/components/ui/auto-resize-input";
 import { Button } from "@/components/ui/button";
 import { Send, Paperclip, Image as ImageIcon, X, MessageCircle } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
@@ -11,9 +11,11 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { useChats, ChatWithParticipants } from "@/hooks/useChats";
 import { format } from "date-fns";
+import { OnlineStatus } from "@/components/ui/online-status";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_FILE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf', 'image/webp'];
+const MAX_MESSAGE_LENGTH = 2000; // Maximum characters per message
 
 interface ChatWindowProps {
   chatId?: string;
@@ -151,7 +153,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId, className }) => {
   };
 
   const handleSendMessage = async () => {
-    if (!newMessage.trim() && !attachedFile) return;
+    const trimmedMessage = newMessage.trim();
+    
+    if (!trimmedMessage && !attachedFile) return;
+    if (trimmedMessage.length > MAX_MESSAGE_LENGTH) {
+      toast.error(`Message cannot exceed ${MAX_MESSAGE_LENGTH} characters`);
+      return;
+    }
 
     try {
       const attachment = attachedFile ? await uploadAttachment() : null;
@@ -159,7 +167,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId, className }) => {
       const { error } = await supabase.from('messages').insert({
         chat_id: chatId,
         sender_id: user?.id,
-        content: newMessage,
+        content: trimmedMessage || null, // Allow null for attachment-only messages
         attachment_url: attachment?.url,
         attachment_type: attachment?.type,
       });
@@ -181,6 +189,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId, className }) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
+    } else if (e.key === "Enter" && e.shiftKey) {
+      // Allow multiline input with Shift+Enter
+      if (newMessage.length + 1 > MAX_MESSAGE_LENGTH) {
+        e.preventDefault();
+        toast.error(`Message cannot exceed ${MAX_MESSAGE_LENGTH} characters`);
+      }
     }
   };
 
@@ -247,9 +261,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId, className }) => {
         
         <div className="flex-1">
           <h3 className="font-medium">{otherParticipant?.full_name || "Unknown"}</h3>
-          <p className="text-xs text-gray-500">
-            {otherParticipant?.status_message || "Online"}
-          </p>
+          <OnlineStatus userId={otherParticipant?.id || ''} />
         </div>
       </div>
       
@@ -298,12 +310,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId, className }) => {
           >
             <ImageIcon className="h-5 w-5" />
           </Button>
-          <Input
+          <AutoResizeInput
             placeholder="Type a message"
-            className="flex-1"
+            className="flex-1 rounded-md"
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
-            onKeyDown={handleKeyPress}
+            maxLength={MAX_MESSAGE_LENGTH}
+            title={`Maximum ${MAX_MESSAGE_LENGTH} characters`}
+            onSubmit={handleSendMessage}
           />
           <Button
             size="icon"
