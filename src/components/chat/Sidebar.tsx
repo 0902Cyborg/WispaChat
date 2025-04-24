@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -7,55 +6,24 @@ import { Search, Plus, MessageCircle } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useIsMobile } from "@/hooks/use-mobile";
 import ChatListItem from "./ChatListItem";
-
-// Mock data for chat list
-const mockChats = [
-  {
-    id: "1",
-    name: "John Doe",
-    lastMessage: "Hey, how are you doing?",
-    timestamp: "10:30 AM",
-    unread: 2,
-    avatar: "",
-  },
-  {
-    id: "2",
-    name: "Alice Smith",
-    lastMessage: "Can you send me the files?",
-    timestamp: "Yesterday",
-    unread: 0,
-    avatar: "",
-  },
-  {
-    id: "3",
-    name: "Team Project",
-    lastMessage: "Bob: I'll handle the design part",
-    timestamp: "Yesterday",
-    unread: 0,
-    avatar: "",
-  },
-  {
-    id: "4",
-    name: "Jane Wilson",
-    lastMessage: "Thanks for your help!",
-    timestamp: "Monday",
-    unread: 0,
-    avatar: "",
-  }
-];
+import { useChats } from "@/hooks/useChats";
 
 interface SidebarProps {
-  onChatSelect?: (chatId: string) => void;
+  onChatSelect: (chatId: string) => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ onChatSelect }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const isMobile = useIsMobile();
+  const { chats, isLoading } = useChats();
   
-  const filteredChats = mockChats.filter(chat => 
-    chat.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    chat.lastMessage.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredChats = chats?.filter(chat => {
+    const otherParticipant = chat.participants.find(p => p.profiles);
+    const searchText = otherParticipant?.profiles.full_name.toLowerCase() || "";
+    const messageText = chat.last_message?.content?.toLowerCase() || "";
+    return searchText.includes(searchQuery.toLowerCase()) || 
+           messageText.includes(searchQuery.toLowerCase());
+  }) || [];
 
   return (
     <div className="flex flex-col h-full border-r bg-white">
@@ -67,7 +35,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onChatSelect }) => {
           </Avatar>
           <h2 className="ml-3 font-semibold">WebChat</h2>
         </div>
-        <Button variant="ghost" size="icon" className="rounded-full">
+        <Button variant="ghost" size="icon">
           <Plus className="h-5 w-5" />
         </Button>
       </div>
@@ -77,25 +45,41 @@ const Sidebar: React.FC<SidebarProps> = ({ onChatSelect }) => {
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500" />
           <Input
-            placeholder="Search or start a new chat"
-            className="pl-10 bg-gray-100"
+            placeholder="Search chats"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10"
           />
         </div>
       </div>
 
       <Separator />
 
-      {/* Chat List */}
+      {/* Chat list */}
       <div className="flex-1 overflow-y-auto">
-        {filteredChats.map((chat) => (
-          <ChatListItem
-            key={chat.id}
-            chat={chat}
-            onClick={() => onChatSelect && onChatSelect(chat.id)}
-          />
-        ))}
+        {isLoading ? (
+          <div className="p-4 text-center text-gray-500">Loading chats...</div>
+        ) : filteredChats.length === 0 ? (
+          <div className="p-4 text-center text-gray-500">
+            {searchQuery ? "No chats found" : "No chats yet"}
+          </div>
+        ) : (
+          filteredChats.map((chat) => {
+            const otherParticipant = chat.participants.find(p => p.profiles)?.profiles;
+            return (
+              <ChatListItem
+                key={chat.id}
+                id={chat.id}
+                name={otherParticipant?.full_name || "Unknown"}
+                lastMessage={chat.last_message?.content || "No messages yet"}
+                timestamp={chat.last_message?.created_at || chat.created_at}
+                unread={0} // TODO: Implement unread count
+                avatar={otherParticipant?.avatar_url || ""}
+                onClick={() => onChatSelect(chat.id)}
+              />
+            );
+          })
+        )}
       </div>
     </div>
   );

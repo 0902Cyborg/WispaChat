@@ -1,4 +1,3 @@
-
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -25,7 +24,7 @@ export const useContacts = () => {
       if (!user) throw new Error("User not authenticated");
 
       try {
-        // Fetch both "forward" and "reverse" contacts
+        // Fetch both "forward" and "reverse" contacts with status check
         const { data: direct, error: directError } = await supabase
           .from("contacts")
           .select(`
@@ -37,10 +36,7 @@ export const useContacts = () => {
           .eq("user_id", user.id)
           .eq("status", "accepted");
         
-        if (directError) {
-          console.error("Error fetching direct contacts:", directError);
-          return [];
-        }
+        if (directError) throw directError;
 
         const { data: reverse, error: reverseError } = await supabase
           .from("contacts")
@@ -53,20 +49,18 @@ export const useContacts = () => {
           .eq("contact_id", user.id)
           .eq("status", "accepted");
         
-        if (reverseError) {
-          console.error("Error fetching reverse contacts:", reverseError);
-          return [];
-        }
+        if (reverseError) throw reverseError;
 
         const contacts = [...(direct || []), ...(reverse || [])];
         return contacts.filter(c => 
           c.profiles && 
-          typeof c.profiles === 'object' && // Ensure profiles is an object
-          'id' in c.profiles && // Check if 'id' exists in profiles
+          typeof c.profiles === 'object' && 
+          'id' in c.profiles && 
           c.profiles.id !== user.id
         );
-      } catch (err) {
+      } catch (err: any) {
         console.error("Error fetching contacts:", err);
+        toast.error("Failed to load contacts: " + err.message);
         return [];
       }
     },
@@ -149,17 +143,27 @@ export const useContacts = () => {
     mutationFn: async (contactId: string) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
+      if (contactId === user.id) throw new Error("You cannot add yourself as a contact");
       
-      // Check if contact request already exists
-      const { data: existingContact, error: checkError } = await supabase
+      // Check for existing contact requests in both directions
+      const { data: existingContacts, error: checkError } = await supabase
         .from("contacts")
         .select("*")
-        .eq("user_id", user.id)
-        .eq("contact_id", contactId);
+        .or(`and(user_id.eq.${user.id},contact_id.eq.${contactId}),and(user_id.eq.${contactId},contact_id.eq.${user.id})`);
 
       if (checkError) throw checkError;
-      if (existingContact && existingContact.length > 0) {
-        throw new Error("Contact request already exists");
+      
+      if (existingContacts && existingContacts.length > 0) {
+        const existing = existingContacts[0];
+        if (existing.status === "accepted") {
+          throw new Error("Already in your contacts");
+        } else if (existing.status === "pending") {
+          if (existing.user_id === user.id) {
+            throw new Error("Contact request already sent");
+          } else {
+            throw new Error("This user has already sent you a request");
+          }
+        }
       }
 
       // Create the contact request
@@ -175,14 +179,23 @@ export const useContacts = () => {
       queryClient.invalidateQueries({ queryKey: ["contacts"] });
       toast.success("Contact request sent!");
     },
-    onError: (error) => {
-      toast.error("Failed to add contact: " + error.message);
+    onError: (error: any) => {
+      toast.error(error.message);
     },
   });
 
   // Accept a contact request
   const acceptContactRequest = useMutation({
     mutationFn: async (contactId: string) => {
+      const { data: contact, error: fetchError } = await supabase
+        .from("contacts")
+        .select("*")
+        .eq("id", contactId)
+        .single();
+        
+      if (fetchError) throw fetchError;
+      if (!contact) throw new Error("Contact request not found");
+      
       const { error } = await supabase
         .from("contacts")
         .update({ status: "accepted" })
@@ -194,7 +207,7 @@ export const useContacts = () => {
       queryClient.invalidateQueries({ queryKey: ["contacts"] });
       toast.success("Contact request accepted!");
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast.error("Failed to accept contact: " + error.message);
     },
   });

@@ -1,5 +1,5 @@
-import React, { useState, useRef } from "react";
-import { Avatar } from "@/components/ui/avatar";
+import React, { useState, useRef, useEffect } from "react";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Send, Paperclip, Image as ImageIcon, X, MessageCircle } from "lucide-react";
@@ -9,49 +9,11 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { useChats, ChatWithParticipants } from "@/hooks/useChats";
+import { format } from "date-fns";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_FILE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf', 'image/webp'];
-
-// Mock data
-const selectedChat = {
-  id: "1",
-  name: "John Doe",
-  avatar: "",
-  online: true,
-  lastSeen: "today at 12:30 PM"
-};
-
-const mockMessages = [
-  {
-    id: "1",
-    senderId: "other",
-    content: "Hey there! How are you doing?",
-    timestamp: "10:30 AM",
-    status: "read"
-  },
-  {
-    id: "2",
-    senderId: "me",
-    content: "I'm good! Just working on a new project. It's a WhatsApp clone using email registration instead of phone numbers.",
-    timestamp: "10:32 AM",
-    status: "read"
-  },
-  {
-    id: "3",
-    senderId: "other",
-    content: "That sounds interesting! What technologies are you using?",
-    timestamp: "10:33 AM",
-    status: "read"
-  },
-  {
-    id: "4",
-    senderId: "me",
-    content: "React for the frontend with TailwindCSS for styling. And Supabase for the backend - it handles authentication, database, and real-time functionality.",
-    timestamp: "10:35 AM",
-    status: "delivered"
-  }
-];
 
 interface ChatWindowProps {
   chatId?: string;
@@ -61,21 +23,93 @@ interface ChatWindowProps {
 const ChatWindow: React.FC<ChatWindowProps> = ({ chatId, className }) => {
   const [newMessage, setNewMessage] = useState("");
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [messages, setMessages] = useState<any[]>([]);
   const { user } = useAuth();
+  const { chats } = useChats();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const currentChat = chats?.find(c => c.id === chatId);
+  const otherParticipant = currentChat?.participants.find(p => p.user_id !== user?.id)?.profiles;
+
+  useEffect(() => {
+    if (!chatId) return;
+
+    // Subscribe to messages
+    const channel = supabase
+      .channel(`chat:${chatId}`)
+      .on('postgres_changes', 
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'messages',
+          filter: `chat_id=eq.${chatId}`
+        }, 
+        payload => {
+          // Handle real-time updates while maintaining chronological order
+          setMessages(current => {
+            const newMessage = payload.new;
+            const messageExists = current.some(msg => msg.id === newMessage.id);
+            if (messageExists) return current;
+            
+            const newMessages = [...current, newMessage];
+            return newMessages.sort((a, b) => 
+              new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            );
+          });
+        }
+      )
+      .subscribe();
+
+    // Fetch existing messages
+    const fetchMessages = async () => {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('chat_id', chatId)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching messages:', error);
+        toast.error('Failed to load messages');
+      } else {
+        setMessages(data || []);
+      }
+    };
+
+    fetchMessages();
+
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [chatId]);
+
+  useEffect(() => {
+    // Scroll to bottom when messages change
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
+    if (!file) return;
+
+    try {
+      // Validate file size
       if (file.size > MAX_FILE_SIZE) {
-        toast.error("File size exceeds 10MB limit");
-        return;
+        throw new Error(`File size exceeds ${MAX_FILE_SIZE / (1024 * 1024)}MB limit`);
       }
+
+      // Validate file type
       if (!ALLOWED_FILE_TYPES.includes(file.type)) {
-        toast.error("Unsupported file type");
-        return;
+        throw new Error(`File type not supported. Allowed types: ${ALLOWED_FILE_TYPES.map(type => type.split('/')[1]).join(', ')}`);
       }
+
       setAttachedFile(file);
+    } catch (error: any) {
+      toast.error(error.message);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   };
 
@@ -83,25 +117,35 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId, className }) => {
     if (!attachedFile || !chatId || !user) return null;
 
     try {
+      // Generate a unique file name
       const fileExt = attachedFile.name.split('.').pop();
-      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+      const uniqueId = Math.random().toString(36).substring(2);
+      const fileName = `${chatId}/${user.id}_${Date.now()}_${uniqueId}.${fileExt}`;
+
+      // Upload the file
       const { error: uploadError } = await supabase.storage
         .from('chat_attachments')
-        .upload(fileName, attachedFile);
+        .upload(fileName, attachedFile, {
+          cacheControl: '3600',
+          upsert: false
+        });
 
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
+      // Get the public URL
+      const { data: { publicUrl }, error: urlError } = supabase.storage
         .from('chat_attachments')
         .getPublicUrl(fileName);
+
+      if (urlError) throw urlError;
 
       return { 
         url: publicUrl, 
         type: attachedFile.type 
       };
-    } catch (error) {
-      toast.error("Failed to upload attachment");
-      console.error(error);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to upload attachment");
+      console.error('File upload error:', error);
       return null;
     }
   };
@@ -124,7 +168,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId, className }) => {
 
       setNewMessage("");
       setAttachedFile(null);
-      toast.success("Message sent!");
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     } catch (error) {
       toast.error("Failed to send message");
       console.error(error);
@@ -192,23 +238,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId, className }) => {
         </div>
       )}
 
-      {/* Existing chat window code */}
       {/* Chat header */}
       <div className="p-3 bg-gray-100 flex items-center">
         <Avatar className="h-10 w-10 mr-3">
-          {selectedChat.avatar ? (
-            <img src={selectedChat.avatar} alt={selectedChat.name} />
-          ) : (
-            <div className="bg-webchat-primary text-white w-full h-full flex items-center justify-center">
-              {selectedChat.name[0].toUpperCase()}
-            </div>
-          )}
+          <AvatarImage src={otherParticipant?.avatar_url || undefined} />
+          <AvatarFallback>{otherParticipant?.full_name?.[0] || '?'}</AvatarFallback>
         </Avatar>
         
         <div className="flex-1">
-          <h3 className="font-medium">{selectedChat.name}</h3>
+          <h3 className="font-medium">{otherParticipant?.full_name || "Unknown"}</h3>
           <p className="text-xs text-gray-500">
-            {selectedChat.online ? "Online" : `Last seen ${selectedChat.lastSeen}`}
+            {otherParticipant?.status_message || "Online"}
           </p>
         </div>
       </div>
@@ -218,15 +258,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId, className }) => {
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto p-4 bg-webchat-bg">
         <div className="space-y-2">
-          {mockMessages.map((message) => (
+          {messages.map((message) => (
             <Message 
               key={message.id} 
               content={message.content}
-              timestamp={message.timestamp}
-              isOutgoing={message.senderId === "me"}
-              status={message.status as "sent" | "delivered" | "read"}
+              timestamp={format(new Date(message.created_at), 'p')}
+              isOutgoing={message.sender_id === user?.id}
+              status={message.status || "sent"}
+              attachment_url={message.attachment_url}
+              attachment_type={message.attachment_type}
             />
           ))}
+          <div ref={messagesEndRef} />
         </div>
       </div>
       
